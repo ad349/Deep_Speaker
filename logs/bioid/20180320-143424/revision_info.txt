@@ -1,0 +1,772 @@
+arguments: train_tripletloss.py --data_dir ../train_2 --learning_rate 0.001 --waves_per_person 10 --people_per_batch 90 --batch_size 90 --max_nrof_epochs 100 --learning_rate_decay_factor 0.9 --learning_rate_decay_epochs 2 --keep_probability 0.1 --nrof_preprocess_threads 15 --epoch_size 1000
+--------------------
+tensorflow version: 1.6.0
+--------------------
+git hash: c20f0c85c57cb989abc489155bd6172db6d651de
+--------------------
+diff --git a/v2/triplet/Untitled.ipynb b/v2/triplet/Untitled.ipynb
+index 6e88b60..adb6da0 100644
+--- a/v2/triplet/Untitled.ipynb
++++ b/v2/triplet/Untitled.ipynb
+@@ -8,70 +8,190 @@
+    },
+    "outputs": [],
+    "source": [
+-    "import numpy as np"
++    "from __future__ import absolute_import\n",
++    "from __future__ import division\n",
++    "from __future__ import print_function"
++   ]
++  },
++  {
++   "cell_type": "code",
++   "execution_count": 2,
++   "metadata": {},
++   "outputs": [
++    {
++     "name": "stderr",
++     "output_type": "stream",
++     "text": [
++      "/home/abhishek_dandona/anaconda2/envs/tensorflow/lib/python2.7/site-packages/h5py/__init__.py:36: FutureWarning: Conversion of the second argument of issubdtype from `float` to `np.floating` is deprecated. In future, it will be treated as `np.float64 == np.dtype(float).type`.\n",
++      "  from ._conv import register_converters as _register_converters\n"
++     ]
++    }
++   ],
++   "source": [
++    "from datetime import datetime\n",
++    "import os\n",
++    "import time\n",
++    "import sys\n",
++    "import tensorflow as tf\n",
++    "import numpy as np\n",
++    "import importlib\n",
++    "import itertools\n",
++    "import argparse\n",
++    "# import facenet \n",
++    "import bioid\n",
++    "#import lfw\n",
++    "import librosa\n",
++    "from python_speech_features import fbank,delta\n",
++    "import scipy.io.wavfile as wave\n",
++    "import models.bioid_cnn_lstm as network"
++   ]
++  },
++  {
++   "cell_type": "code",
++   "execution_count": 3,
++   "metadata": {
++    "collapsed": true
++   },
++   "outputs": [],
++   "source": [
++    "import sys\n",
++    "import tensorflow as tf\n",
++    "import numpy as np\n",
++    "import librosa\n",
++    "from python_speech_features import fbank,delta\n",
++    "import scipy.io.wavfile as wave"
+    ]
+   },
+   {
+    "cell_type": "code",
+    "execution_count": 4,
++   "metadata": {
++    "collapsed": true
++   },
++   "outputs": [],
++   "source": [
++    "from utils import get_filterbanks"
++   ]
++  },
++  {
++   "cell_type": "code",
++   "execution_count": 5,
++   "metadata": {
++    "collapsed": true
++   },
++   "outputs": [],
++   "source": [
++    "x = get_filterbanks('/home/abhishek_dandona/deepspeaker/gitthis/v2/test/004477_nist2010/004477_nist2010@34753_nist2010_ttdwr_2-10.wav')"
++   ]
++  },
++  {
++   "cell_type": "code",
++   "execution_count": 6,
+    "metadata": {},
+    "outputs": [
+     {
+      "data": {
+       "text/plain": [
+-       "array([ 3,  7, 11])"
++       "799"
+       ]
+      },
+-     "execution_count": 4,
++     "execution_count": 6,
+      "metadata": {},
+      "output_type": "execute_result"
+     }
+    ],
+    "source": [
+-    "np.sum([[1,2],[3,4],[5,6]],1)"
++    "len(x)"
+    ]
+   },
+   {
+    "cell_type": "code",
+-   "execution_count": 15,
+-   "metadata": {},
++   "execution_count": 7,
++   "metadata": {
++    "scrolled": true
++   },
+    "outputs": [
+     {
+      "data": {
+       "text/plain": [
+-       "(array([0]),)"
++       "(799, 64, 3)"
+       ]
+      },
+-     "execution_count": 15,
++     "execution_count": 7,
+      "metadata": {},
+      "output_type": "execute_result"
+     }
+    ],
+    "source": [
+-    "np.where([0.01,0.02,3,4,1] > 0.1)"
++    "x.shape"
+    ]
+   },
+   {
+    "cell_type": "code",
+-   "execution_count": 11,
++   "execution_count": 8,
+    "metadata": {},
+    "outputs": [
+     {
+-     "ename": "AxisError",
+-     "evalue": "axis 1 is out of bounds for array of dimension 1",
+-     "output_type": "error",
+-     "traceback": [
+-      "\u001b[0;31m---------------------------------------------------------------------------\u001b[0m",
+-      "\u001b[0;31mAxisError\u001b[0m                                 Traceback (most recent call last)",
+-      "\u001b[0;32m<ipython-input-11-400111282b19>\u001b[0m in \u001b[0;36m<module>\u001b[0;34m()\u001b[0m\n\u001b[0;32m----> 1\u001b[0;31m \u001b[0mnp\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0msum\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m[\u001b[0m\u001b[0;36m1\u001b[0m\u001b[0;34m,\u001b[0m\u001b[0;36m2\u001b[0m\u001b[0;34m,\u001b[0m\u001b[0;36m3\u001b[0m\u001b[0;34m,\u001b[0m\u001b[0;36m4\u001b[0m\u001b[0;34m]\u001b[0m\u001b[0;34m,\u001b[0m\u001b[0;36m1\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m",
+-      "\u001b[0;32m/home/abhishek_dandona/anaconda2/lib/python2.7/site-packages/numpy/core/fromnumeric.pyc\u001b[0m in \u001b[0;36msum\u001b[0;34m(a, axis, dtype, out, keepdims)\u001b[0m\n\u001b[1;32m   1832\u001b[0m             \u001b[0;32mreturn\u001b[0m \u001b[0msum\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0maxis\u001b[0m\u001b[0;34m=\u001b[0m\u001b[0maxis\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mdtype\u001b[0m\u001b[0;34m=\u001b[0m\u001b[0mdtype\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mout\u001b[0m\u001b[0;34m=\u001b[0m\u001b[0mout\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0;34m**\u001b[0m\u001b[0mkwargs\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m   1833\u001b[0m     return _methods._sum(a, axis=axis, dtype=dtype,\n\u001b[0;32m-> 1834\u001b[0;31m                          out=out, **kwargs)\n\u001b[0m\u001b[1;32m   1835\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m   1836\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n",
+-      "\u001b[0;32m/home/abhishek_dandona/anaconda2/lib/python2.7/site-packages/numpy/core/_methods.pyc\u001b[0m in \u001b[0;36m_sum\u001b[0;34m(a, axis, dtype, out, keepdims)\u001b[0m\n\u001b[1;32m     30\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m     31\u001b[0m \u001b[0;32mdef\u001b[0m \u001b[0m_sum\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0ma\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0maxis\u001b[0m\u001b[0;34m=\u001b[0m\u001b[0mNone\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mdtype\u001b[0m\u001b[0;34m=\u001b[0m\u001b[0mNone\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mout\u001b[0m\u001b[0;34m=\u001b[0m\u001b[0mNone\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mkeepdims\u001b[0m\u001b[0;34m=\u001b[0m\u001b[0mFalse\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m---> 32\u001b[0;31m     \u001b[0;32mreturn\u001b[0m \u001b[0mumr_sum\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0ma\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0maxis\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mdtype\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mout\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mkeepdims\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m     33\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m     34\u001b[0m \u001b[0;32mdef\u001b[0m \u001b[0m_prod\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0ma\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0maxis\u001b[0m\u001b[0;34m=\u001b[0m\u001b[0mNone\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mdtype\u001b[0m\u001b[0;34m=\u001b[0m\u001b[0mNone\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mout\u001b[0m\u001b[0;34m=\u001b[0m\u001b[0mNone\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mkeepdims\u001b[0m\u001b[0;34m=\u001b[0m\u001b[0mFalse\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n",
+-      "\u001b[0;31mAxisError\u001b[0m: axis 1 is out of bounds for array of dimension 1"
+-     ]
++     "data": {
++      "text/plain": [
++       "array([[[-0.41910645, -0.4191064 , -0.4191068 ],\n",
++       "        [-0.4191063 , -0.41907763, -0.41902894],\n",
++       "        [-0.41908926, -0.4159397 , -0.39271155],\n",
++       "        ...,\n",
++       "        [-0.40247068, -0.40247068, -0.40247068],\n",
++       "        [-0.40247068, -0.40247068, -0.40247068],\n",
++       "        [-0.40247068, -0.40247068, -0.40247068]],\n",
++       "\n",
++       "       [[-0.39790472, -0.3979049 , -0.39790586],\n",
++       "        [-0.39790565, -0.3979038 , -0.39789954],\n",
++       "        [-0.39788204, -0.39452508, -0.3787944 ],\n",
++       "        ...,\n",
++       "        [-0.42255384, -0.42255384, -0.42255384],\n",
++       "        [-0.42255384, -0.42255384, -0.42255384],\n",
++       "        [-0.42255384, -0.42255384, -0.42255384]],\n",
++       "\n",
++       "       [[-0.43868268, -0.43868184, -0.43868083],\n",
++       "        [-0.438681  , -0.43866467, -0.4386449 ],\n",
++       "        [-0.43845993, -0.43326893, -0.41124275],\n",
++       "        ...,\n",
++       "        [-0.44665822, -0.44665822, -0.44665822],\n",
++       "        [-0.44665822, -0.44665822, -0.44665822],\n",
++       "        [-0.44665822, -0.44665822, -0.44665822]],\n",
++       "\n",
++       "       ...,\n",
++       "\n",
++       "       [[ 0.        ,  0.        ,  0.        ],\n",
++       "        [ 0.        ,  0.        ,  0.        ],\n",
++       "        [ 0.        ,  0.        ,  0.        ],\n",
++       "        ...,\n",
++       "        [ 0.        ,  0.        ,  0.        ],\n",
++       "        [ 0.        ,  0.        ,  0.        ],\n",
++       "        [ 0.        ,  0.        ,  0.        ]],\n",
++       "\n",
++       "       [[ 0.        ,  0.        ,  0.        ],\n",
++       "        [ 0.        ,  0.        ,  0.        ],\n",
++       "        [ 0.        ,  0.        ,  0.        ],\n",
++       "        ...,\n",
++       "        [ 0.        ,  0.        ,  0.        ],\n",
++       "        [ 0.        ,  0.        ,  0.        ],\n",
++       "        [ 0.        ,  0.        ,  0.        ]],\n",
++       "\n",
++       "       [[ 0.        ,  0.        ,  0.        ],\n",
++       "        [ 0.        ,  0.        ,  0.        ],\n",
++       "        [ 0.        ,  0.        ,  0.        ],\n",
++       "        ...,\n",
++       "        [ 0.        ,  0.        ,  0.        ],\n",
++       "        [ 0.        ,  0.        ,  0.        ],\n",
++       "        [ 0.        ,  0.        ,  0.        ]]], dtype=float32)"
++      ]
++     },
++     "execution_count": 8,
++     "metadata": {},
++     "output_type": "execute_result"
+     }
+    ],
+    "source": [
+-    "np.sum([1,2,3,4],1)"
++    "x"
+    ]
+   },
+   {
+@@ -82,8 +202,73 @@
+    },
+    "outputs": [],
+    "source": [
+-    "for i in range(0):\n",
+-    "    print(i)"
++    "import numpy as np"
++   ]
++  },
++  {
++   "cell_type": "code",
++   "execution_count": 14,
++   "metadata": {
++    "collapsed": true
++   },
++   "outputs": [],
++   "source": [
++    "a = np.random.randn(30)"
++   ]
++  },
++  {
++   "cell_type": "code",
++   "execution_count": 15,
++   "metadata": {},
++   "outputs": [],
++   "source": [
++    "b = 0.012131"
++   ]
++  },
++  {
++   "cell_type": "code",
++   "execution_count": 21,
++   "metadata": {},
++   "outputs": [
++    {
++     "data": {
++      "text/plain": [
++       "array([False,  True,  True,  True,  True, False, False, False,  True,\n",
++       "        True,  True,  True, False, False, False, False, False, False,\n",
++       "       False, False, False, False,  True,  True,  True, False,  True,\n",
++       "        True,  True,  True])"
++      ]
++     },
++     "execution_count": 21,
++     "metadata": {},
++     "output_type": "execute_result"
++    }
++   ],
++   "source": [
++    "np.logical_or(a>b, np.logical_and(b>a, b<a+0.1))"
++   ]
++  },
++  {
++   "cell_type": "code",
++   "execution_count": 19,
++   "metadata": {},
++   "outputs": [
++    {
++     "data": {
++      "text/plain": [
++       "array([False,  True,  True,  True,  True, False, False, False,  True,\n",
++       "        True,  True, False, False, False, False, False, False, False,\n",
++       "       False, False, False, False,  True,  True,  True, False,  True,\n",
++       "       False,  True,  True])"
++      ]
++     },
++     "execution_count": 19,
++     "metadata": {},
++     "output_type": "execute_result"
++    }
++   ],
++   "source": [
++    "a>b"
+    ]
+   },
+   {
+@@ -97,11 +282,10 @@
+   }
+  ],
+  "metadata": {
+-  "anaconda-cloud": {},
+   "kernelspec": {
+-   "display_name": "Python 2",
++   "display_name": "tf2.7",
+    "language": "python",
+-   "name": "python2"
++   "name": "tensorflow"
+   },
+   "language_info": {
+    "codemirror_mode": {
+diff --git a/v2/triplet/bioid.py b/v2/triplet/bioid.py
+index b3adfb0..9bd658e 100644
+--- a/v2/triplet/bioid.py
++++ b/v2/triplet/bioid.py
+@@ -30,18 +30,12 @@ def triplet_loss(anchor, positive, negative, alpha):
+ 
+     # Replace Euclidean distance with Cosine similarity
+     with tf.variable_scope('triplet_loss'):
+-        mul_ap = tf.reduce_sum(tf.multiply(anchor, positive), axis=1)
+-        mul_an = tf.reduce_sum(tf.multiply(anchor, negative), axis=1)
+-        mod_ap = tf.multiply(tf.sqrt(tf.reduce_sum(tf.square(anchor), axis=1)),
+-                             tf.sqrt(tf.reduce_sum(tf.square(positive), axis=1)))
+-        mod_an = tf.multiply(tf.sqrt(tf.reduce_sum(tf.square(anchor), axis=1)),
+-                             tf.sqrt(tf.reduce_sum(tf.square(negative), axis=1)))
+-
+-        pos_dist = tf.divide(mul_ap, mod_ap)
+-        neg_dist = tf.divide(mul_an, mod_an)
+-        basic_loss = tf.add(tf.subtract(neg_dist, pos_dist), alpha)
+-        loss = tf.reduce_mean(tf.maximum(basic_loss, 0.0), 0)  # tf.reduce_mean
+-    return loss
++        d_pos = tf.reduce_sum(tf.square(anchor - positive), 1)
++        d_neg = tf.reduce_sum(tf.square(anchor - negative), 1)
++        
++        loss = tf.maximum(0., alpha + d_pos - d_neg)
++        loss = tf.reduce_mean(loss)
++        return loss
+ 
+ # def decov_loss(xs):
+ #     """Decov loss as described in https://arxiv.org/pdf/1511.06068.pdf
+@@ -369,6 +363,26 @@ def load_model(model):
+       
+         saver = tf.train.import_meta_graph(os.path.join(model_exp, meta_file))
+         saver.restore(tf.get_default_session(), os.path.join(model_exp, ckpt_file))
++        
++def load_model_eval(session, model):
++    # Check if the model is a model directory (containing a metagraph and a checkpoint file)
++    #  or if it is a protobuf file with a frozen graph
++    model_exp = os.path.expanduser(model)
++    if (os.path.isfile(model_exp)):
++        print('Model filename: %s' % model_exp)
++        with gfile.FastGFile(model_exp,'rb') as f:
++            graph_def = tf.GraphDef()
++            graph_def.ParseFromString(f.read())
++            tf.import_graph_def(graph_def, name='')
++    else:
++        print('Model directory: %s' % model_exp)
++        meta_file, ckpt_file = get_model_filenames(model_exp)
++        
++        print('Metagraph file: %s' % meta_file)
++        print('Checkpoint file: %s' % ckpt_file)
++      
++        saver = tf.train.import_meta_graph(os.path.join(model_exp, meta_file))
++        saver.restore(session, os.path.join(model_exp, ckpt_file))
+ 
+ def get_model_filenames(model_dir):
+     files = os.listdir(model_dir)
+diff --git a/v2/triplet/bioid.pyc b/v2/triplet/bioid.pyc
+index 375e396..a740716 100644
+Binary files a/v2/triplet/bioid.pyc and b/v2/triplet/bioid.pyc differ
+diff --git a/v2/triplet/models/bioid_cnn_lstm.py b/v2/triplet/models/bioid_cnn_lstm.py
+index 313ce2f..b327d54 100644
+--- a/v2/triplet/models/bioid_cnn_lstm.py
++++ b/v2/triplet/models/bioid_cnn_lstm.py
+@@ -3,54 +3,151 @@ from __future__ import division
+ from __future__ import print_function
+ 
+ import tensorflow as tf
+-# import tensorflow.contrib.slim as slim
++
++# Input Shape: [-1, 799, 64, 3]
++# Layer1 Shape: [-1, 400, 32, 32]
++# Layer2 Shape: [-1, 200, 16, 64]
++# Layer3 Shape: [-1, 100, 8, 128]
++# Layer3 Shape: [-1, 50, 4, 256]
+ 
+ def inference(x, batch_size, keep_probability, phase_train, bottleneck_layer_size, weight_decay):
++    # NHWC
++    with tf.name_scope('Graph'):
++        x=tf.reshape(x,[batch_size,-1,64,3])
++        print()
++        print('-'*100)
++        print("INPUT SHAPE: ", x.get_shape().as_list())
++        
++        with tf.variable_scope('conv2D_A'):
++            x = tf.layers.conv2d(x,
++                                 filters=32,
++                                 kernel_size=5,
++                                 strides=1,
++                                 padding='SAME',
++                                 data_format='channels_last',
++                                 kernel_initializer=tf.contrib.layers.xavier_initializer_conv2d(seed=0),
++                                 activation=tf.nn.relu6,
++                                 name='conv2D_64_A')
++            x = tf.layers.batch_normalization(x, training=True)
++            x = tf.layers.max_pooling2d(x, pool_size=[2, 2], strides=[2,2], padding='SAME')
++            
++        print("CONVA SHAPE: ", x.get_shape().as_list())
++        
++        with tf.variable_scope('conv2D_B'):
++            x = tf.layers.conv2d(x,
++                                 filters=64,
++                                 kernel_size=3,
++                                 strides=1,
++                                 padding='SAME',
++                                 data_format = 'channels_last',
++                                 kernel_initializer=tf.contrib.layers.xavier_initializer_conv2d(seed=0),
++                                 activation=tf.nn.relu6,
++                                 name='conv2D_64_B')
++            x = tf.layers.batch_normalization(x, training=True)
++            x = tf.layers.max_pooling2d(x, [2, 2], strides=[2,2], padding='SAME')
++
++        print("CONVB SHAPE: ", x.get_shape().as_list())
++        
++        x=tf.reshape(x,[batch_size,-1,1024])
++        x=tf.transpose(x,[1,0,2])
++
++        print("RESHAPE: ", x.get_shape().as_list())
++        
++        cells = []
++        for _ in range(3):
++            cell = tf.contrib.rnn.GRUCell(512)  # Or LSTMCell(num_units)
++            cell = tf.contrib.rnn.DropoutWrapper(cell, output_keep_prob=1.0 - keep_probability)
++            cells.append(cell)
++        cell = tf.contrib.rnn.MultiRNNCell(cells)
++        
++        output, _ = tf.nn.dynamic_rnn(cell, x, dtype=tf.float32)
++        
++        print("GRU SHAPE: ", output.get_shape().as_list())
++        
++        with tf.variable_scope('Temporal_Average_Layer'):
++            x = tf.reduce_mean(output,0)
++
++        print("TEMPORAL AVG SHAPE: ", x.get_shape().as_list())
++
++        with tf.variable_scope('Affine_Layer_A'):
++            x = tf.layers.dense(x, 
++                                units=256, 
++                                activation = tf.nn.relu6,
++                                kernel_initializer=tf.contrib.layers.xavier_initializer(seed=0))
++
++        print("AFFINE SHAPE: ", x.get_shape().as_list())
++
++        with tf.variable_scope('L2_Norm'):
++            x = tf.nn.l2_normalize(x, 1, name='embedding')
++        
++        print('-'*100)
++        print()
++        
++    return x
++
++def inference_val(x, batch_size, keep_probability, phase_train, bottleneck_layer_size, weight_decay):
+     # NCHW
+-    x=tf.reshape(x,[batch_size,3,-1,64])
++    x=tf.reshape(x,[batch_size,-1,64,3])
++    
++    print("INPUT SHAPE: ", x.get_shape().as_list())
+     
+     with tf.variable_scope('conv2D_A'):
+-        x = tf.layers.conv2d(x,filters=64,
+-            kernel_size=5,strides=2,
+-            padding='SAME',data_format='channels_first',
+-            kernel_initializer=tf.contrib.layers.xavier_initializer_conv2d(seed=0),activation=None,name='conv2D_64_A')
+-        x = tf.minimum(tf.nn.relu(x), 20)
+-        x = tf.layers.batch_normalization(x, training=True, fused=True)
++        x = tf.layers.conv2d(x,filters=32,
++            kernel_size=5,strides=1,
++            padding='SAME',data_format='channels_last',
++            kernel_initializer=tf.contrib.layers.xavier_initializer_conv2d(seed=0),activation=tf.nn.relu6,name='conv2D_64_A')
++        x = tf.layers.batch_normalization(x, training=False)
++        x = tf.layers.max_pooling2d(x, pool_size=[2, 2], strides=[1,1], padding='SAME')
+ 
++    print("CONVA SHAPE: ", x.get_shape().as_list())
++    
+     with tf.variable_scope('conv2D_B'):
+         x = tf.layers.conv2d(x,filters=64,
+-            kernel_size=5, strides=2, 
+-            padding='SAME', data_format = 'channels_first',
+-            kernel_initializer=tf.contrib.layers.xavier_initializer_conv2d(seed=0), activation=None, name='conv2D_64_B')
+-        x = tf.minimum(tf.nn.relu(x), 20)
+-        x = tf.layers.batch_normalization(x, training=True, fused=True)
++            kernel_size=3, strides=1, 
++            padding='SAME', data_format = 'channels_last',
++            kernel_initializer=tf.contrib.layers.xavier_initializer_conv2d(seed=0), activation=tf.nn.relu6, name='conv2D_64_B')
++        x = tf.layers.batch_normalization(x, training=False)
++        x = tf.layers.max_pooling2d(x, [2, 2], strides=[1,1], padding='SAME')
+ 
++    print("CONVB SHAPE: ", x.get_shape().as_list())
++        
+     x=tf.reshape(x,[batch_size,-1,1024])
+     x=tf.transpose(x,[1,0,2])
+ 
++    print("RESHAPE: ", x.get_shape().as_list())
++    
+     with tf.variable_scope('LSTM_A'):
+-        lstm_cell_A = tf.contrib.rnn.LayerNormBasicLSTMCell(512, dropout_keep_prob=keep_probability)
++        lstm_cell_A = tf.contrib.rnn.LayerNormBasicLSTMCell(512, dropout_keep_prob=0.0)
+         # initial_state = lstm_cell_A.zero_state(batch_size, dtype=tf.float32)
+         x, _ = tf.nn.dynamic_rnn(lstm_cell_A, x, dtype=tf.float32)
+ 
++    print("LSTMA SHAPE: ", x.get_shape().as_list())
++        
+     with tf.variable_scope('LSTM_B'):
+-        lstm_cell_B = tf.contrib.rnn.LayerNormBasicLSTMCell(512, dropout_keep_prob=keep_probability)
++        lstm_cell_B = tf.contrib.rnn.LayerNormBasicLSTMCell(512, dropout_keep_prob=0.0)
+         # initial_state = lstm_cell_B.zero_state(batch_size, dtype=tf.float32)
+         x, _ = tf.nn.dynamic_rnn(lstm_cell_B, x, dtype=tf.float32)
+ 
++    print("LSTMB SHAPE: ", x.get_shape().as_list())
++        
+     with tf.variable_scope('LSTM_C'):
+-        lstm_cell_C = tf.contrib.rnn.LayerNormBasicLSTMCell(512, dropout_keep_prob=keep_probability)
++        lstm_cell_C = tf.contrib.rnn.LayerNormBasicLSTMCell(512, dropout_keep_prob=0.0)
+         # initial_state = lstm_cell_C.zero_state(batch_size, dtype=tf.float32)
+         x, _ = tf.nn.dynamic_rnn(lstm_cell_C, x, dtype=tf.float32)
+ 
++    print("LSTMC SHAPE: ", x.get_shape().as_list())
++        
+     with tf.variable_scope('Temporal_Average_Layer'):
+         x = tf.reduce_mean(x,0)
+ 
++    print("TEMPORAL AVG SHAPE: ", x.get_shape().as_list())
++        
+     with tf.variable_scope('Affine_Layer_A'):
+         x = tf.layers.dense(x, units=256, activation = None,
+             kernel_initializer=tf.contrib.layers.xavier_initializer(seed=0))
+-        x = tf.minimum(tf.nn.relu(x), 20)
+ 
++    print("AFFINE SHAPE: ", x.get_shape().as_list())
++        
+     with tf.variable_scope('L2_Norm'):
+         x = tf.nn.l2_normalize(x, 1, name='embedding')
+     return x
+\ No newline at end of file
+diff --git a/v2/triplet/models/bioid_cnn_lstm.pyc b/v2/triplet/models/bioid_cnn_lstm.pyc
+index a70cfc6..6d1f8c0 100644
+Binary files a/v2/triplet/models/bioid_cnn_lstm.pyc and b/v2/triplet/models/bioid_cnn_lstm.pyc differ
+diff --git a/v2/triplet/nets.py b/v2/triplet/nets.py
+index 7624a3a..8405f82 100644
+--- a/v2/triplet/nets.py
++++ b/v2/triplet/nets.py
+@@ -3,7 +3,7 @@ import tensorflow as tf
+ def model_softmax(x,batch_size,total_speakers):
+     
+     print('I/P shape ',x.get_shape())
+-    x=tf.reshape(x,[batch_size,3,-1,64])
++    x=tf.reshape(x,[batch_size,-1,64,3])
+ 
+     print('INPUT SHAPE ', x.get_shape())
+     
+@@ -63,91 +63,3 @@ def model_softmax(x,batch_size,total_speakers):
+     print('Softmax O/P shape ',x.get_shape())
+     
+     return x
+-
+-
+-def model_softmax_eval(x,batch_size):
+-    
+-    print('I/P shape ',x.get_shape())
+-    x=tf.reshape(x,[batch_size,-1,64,3])
+-    
+-    with tf.variable_scope('conv2D_A'):
+-        x=tf.layers.conv2d(x,filters=64,kernel_size=5, 
+-                           strides=(2,2),padding='SAME',kernel_initializer=tf.contrib.layers.xavier_initializer_conv2d(seed=0),
+-                           activation=tf.nn.relu6,name='conv2D_64_A')
+-        print('Conv2D_A O/P shape ',x.get_shape())
+-        
+-    with tf.variable_scope('Batch_Norm_A'):
+-        x = tf.layers.batch_normalization(x)
+-        
+-    with tf.variable_scope('conv2D_B'):
+-        x=tf.layers.conv2d(x,filters=64,kernel_size=5, 
+-                           strides=(2,2),padding='SAME',kernel_initializer=tf.contrib.layers.xavier_initializer_conv2d(seed=0),
+-                           activation=tf.nn.relu6,name='conv2D_64')
+-        print('Conv2D_B O/P shape ',x.get_shape())
+-        
+-    with tf.variable_scope('Batch_Norm_B'):
+-        x = tf.layers.batch_normalization(x)
+-       
+-    x=tf.reshape(x,[batch_size,-1,1024])
+-    x=tf.transpose(x,[1,0,2])
+-    
+-    with tf.variable_scope('LSTM_A'):
+-        lstm_cell_A =tf.contrib.rnn.LayerNormBasicLSTMCell(512,dropout_keep_prob=0.9)
+-        x, _ = tf.nn.dynamic_rnn(lstm_cell_A, x, dtype=tf.float32)
+-        
+-    with tf.variable_scope('LSTM_B'):
+-        lstm_cell_B =tf.contrib.rnn.LayerNormBasicLSTMCell(512,dropout_keep_prob=0.9)
+-        x, _ = tf.nn.dynamic_rnn(lstm_cell_B, x, dtype=tf.float32)
+-        
+-    with tf.variable_scope('LSTM_C'):
+-        lstm_cell_C =tf.contrib.rnn.LayerNormBasicLSTMCell(512,dropout_keep_prob=0.9)
+-        x, states = tf.nn.dynamic_rnn(lstm_cell_C, x, dtype=tf.float32)
+-    
+-    print('LSTM O/P shape ',x.get_shape())
+-    
+-    with tf.variable_scope('Temporal_Average_Layer'):
+-        x=tf.reduce_mean(x,0)
+-        
+-    print('Temporal AVG O/P shape ',x.get_shape())
+-    
+-    with tf.variable_scope('Affine_Layer_A'):
+-        x=tf.layers.dense(x,units=256,activation=tf.nn.relu6, kernel_initializer=tf.contrib.layers.xavier_initializer(seed=0))
+-        
+-    print('Affine O/P shape ',x.get_shape())
+-    
+-    with tf.variable_scope('L2_Norm'):
+-        x = tf.nn.l2_normalize(x,1,name='embedding')
+-    
+-    print('Embedding Shape : ', x.get_shape())
+-    
+-    return x
+-
+-
+-def model_softmax_eval_old(x,batch_size,total_speakers):
+-    print('I/P shape ',x.get_shape())
+-    x=tf.reshape(x,[batch_size,-1,64,3])
+-    with tf.variable_scope('conv2D_A'):
+-        x=tf.layers.conv2d(x,filters=64,kernel_size=5, strides=(2,2),padding='SAME',kernel_initializer=tf.contrib.layers.xavier_initializer_conv2d(seed=0),activation=tf.nn.relu6,name='conv2D_64_A')
+-        print('Conv2D_A O/P shape ',x.get_shape())
+-    with tf.variable_scope('conv2D_B'):
+-        x=tf.layers.conv2d(x,filters=64,kernel_size=5, strides=(2,2),padding='SAME',kernel_initializer=tf.contrib.layers.xavier_initializer_conv2d(seed=0),activation=tf.nn.relu6,name='conv2D_64')
+-        print('Conv2D_B O/P shape ',x.get_shape())
+-    x=tf.reshape(x,[batch_size,-1,1024])
+-    x=tf.transpose(x,[1,0,2])
+-    with tf.variable_scope('LSTM_A'):
+-        lstm_cell_A = tf.nn.rnn_cell.BasicLSTMCell(1024,state_is_tuple=True)
+-        x, states = tf.nn.dynamic_rnn(lstm_cell_A, x, dtype=tf.float32)
+-    with tf.variable_scope('LSTM_B'):
+-        lstm_cell_B = tf.nn.rnn_cell.BasicLSTMCell(1024,state_is_tuple=True)
+-        x, states = tf.nn.dynamic_rnn(lstm_cell_B, x, dtype=tf.float32)
+-    with tf.variable_scope('LSTM_C'):
+-        lstm_cell_C = tf.nn.rnn_cell.BasicLSTMCell(1024,state_is_tuple=True)
+-        x, states = tf.nn.dynamic_rnn(lstm_cell_C, x, dtype=tf.float32)
+-    print('LSTM O/P shape ',x.get_shape())
+-    with tf.variable_scope('Temporal_Average_Layer'):
+-        x=tf.reduce_mean(x,0)
+-    print('Temporal AVG O/P shape ',x.get_shape())
+-    with tf.variable_scope('Affine_Layer_A'):
+-        x=tf.layers.dense(x,units=256,activation=tf.nn.relu6, kernel_initializer=tf.contrib.layers.xavier_initializer(seed=0))
+-    print('Affine O/P shape ',x.get_shape())
+-    return x
+diff --git a/v2/triplet/train_tripletloss.py b/v2/triplet/train_tripletloss.py
+index 45d2a7c..6fcda5b 100644
+--- a/v2/triplet/train_tripletloss.py
++++ b/v2/triplet/train_tripletloss.py
+@@ -26,7 +26,6 @@ from tensorflow.python.ops import data_flow_ops
+ 
+ from six.moves import xrange # Python 2.7
+ 
+-
+ def main(args):
+     # This loads the graph for the model
+     # In our case we load if from a py file
+@@ -78,7 +77,7 @@ def main(args):
+         # filename_placeholder = tf.placeholder(tf.string)
+         
+         # Should also try PaddingFIFO Queue
+-        input_queue = data_flow_ops.FIFOQueue(capacity=1100000,
++        input_queue = data_flow_ops.FIFOQueue(capacity=110000,
+                                     dtypes=[tf.string, tf.int64],
+                                     shapes=[(3,), (3,)],
+                                     shared_name=None, name=None)
+@@ -92,16 +91,14 @@ def main(args):
+             waves = []
+             for filename in tf.unstack(filenames):
+                 wave = tf.py_func(get_filterbanks, [filename], tf.float32)
+-                # Add Augmentation Here
+-                #
+-                wave.set_shape((3, args.nframes, args.nfilt))
++                wave.set_shape((args.nframes, args.nfilt, 3))
+                 waves.append(wave)
+             waves_and_labels.append([waves, label])
+-
++            
+         wave_batch, labels_batch = tf.train.batch_join(
+             waves_and_labels,
+             batch_size=batch_size_placeholder,
+-            shapes=[(3, args.nframes, args.nfilt), ()],
++            shapes=[(args.nframes, args.nfilt, 3), ()],
+             enqueue_many=True,
+             capacity=4 * nrof_preprocess_threads * args.batch_size,
+             allow_smaller_final_batch=True)
+@@ -178,7 +175,8 @@ def main(args):
+                     # Add Evaluate function from facenet
+                     # if args.lfw_dir:
+                     #     evaluate(sess, lfw_paths, embeddings, labels_batch, wave_paths_placeholder, labels_placeholder, 
+-                    #             batch_size_placeholder, learning_rate_placeholder, phase_train_placeholder, enqueue_op, actual_issame, args.batch_size, 
++                    #             batch_size_placeholder, learning_rate_placeholder, phase_train_placeholder, 
++                    #                enqueue_op, actual_issame, args.batch_size, 
+                     #             args.lfw_nrof_folds, log_dir, step, summary_writer, args.embedding_size)
+                 print('All Epochs Finished!')
+                 print('Stopping all threads')
+@@ -299,10 +297,13 @@ def select_triplets(embeddings, nrof_waves_per_class, wave_paths, people_per_bat
+             for pair in xrange(j, nrof_waves): # For every possible positive pair.
+                 p_idx = emb_start_idx + pair
+                 pos_dist_sqr = np.sum(np.square(embeddings[a_idx]-embeddings[p_idx]))
+-                neg_dists_sqr[emb_start_idx:emb_start_idx+nrof_waves] = np.NaN
+-                #all_neg = np.where(np.logical_and(neg_dists_sqr-pos_dist_sqr<alpha, pos_dist_sqr<neg_dists_sqr))[0]
++                neg_dists_sqr[emb_start_idx:emb_start_idx+nrof_waves] = np.NaN # np.Nan
++                all_neg = np.where(np.logical_or(
++                    neg_dists_sqr<pos_dist_sqr, np.logical_and(
++                        pos_dist_sqr<neg_dists_sqr,neg_dists_sqr<pos_dist_sqr+alpha)))[0]
++                # all_neg = np.where(np.logical_and(neg_dists_sqr-pos_dist_sqr<alpha, pos_dist_sqr<neg_dists_sqr))[0]
+                 # Facenet/Same as Deep Speaker
+-                all_neg = np.where(neg_dists_sqr-pos_dist_sqr < alpha)[0] # VGG Face selecction
++                #all_neg = np.where(neg_dists_sqr-pos_dist_sqr < alpha)[0] # VGG Face selecction
+                 nrof_random_negs = all_neg.shape[0]
+                 if nrof_random_negs>0:
+                     rnd_idx = np.random.randint(nrof_random_negs)
+@@ -454,13 +455,13 @@ def parse_arguments(argv):
+     parser.add_argument('--learning_rate_decay_factor', type=float,
+         help='Learning rate decay factor.', default=1.0)
+     parser.add_argument('--optimizer', type=str, choices=['ADAGRAD', 'ADADELTA', 'ADAM', 'RMSPROP', 'MOM'],
+-        help='The optimization algorithm to use', default='ADAGRAD')
++        help='The optimization algorithm to use', default='ADAM')
+     parser.add_argument('--moving_average_decay', type=float,
+         help='Exponential decay for tracking of training parameters.', default=0.9999)
+     parser.add_argument('--gpu_memory_fraction', type=float,
+         help='Upper bound on the amount of GPU memory that will be used by the process.', default=0.7)
+     parser.add_argument('--max_nrof_epochs', type=int,
+-        help='Number of epochs to run.', default=500)
++        help='Number of epochs to run.', default=100)
+     parser.add_argument('--learning_rate_schedule_file', type=str,
+         help='File containing the learning rate schedule that is used when learning_rate is set to to -1.', default='data/learning_rate_schedule.txt')
+     parser.add_argument('--people_per_batch', type=int,
+diff --git a/v2/triplet/utils.py b/v2/triplet/utils.py
+index ee248d1..cff30f3 100644
+--- a/v2/triplet/utils.py
++++ b/v2/triplet/utils.py
+@@ -26,7 +26,7 @@ def get_filterbanks(filename_placeholder, duration=8):
+ 
+     def normalize_frames(m,epsilon=1e-12):
+         ''' Normalizes features '''
+-        return [(v - np.mean(v)) / max(np.std(v),epsilon) for v in m]
++        return np.array([(v - np.mean(v)) / max(np.std(v),epsilon) for v in m]).flatten()
+     
+     assert filename_placeholder.endswith('wav')
+     window_fn= lambda x: np.hanning(x)
+@@ -51,14 +51,10 @@ def get_filterbanks(filename_placeholder, duration=8):
+     delta1 = normalize_frames(delta1)
+     delta2 = normalize_frames(delta2)
+     
+-    features = np.array([filterbanks, delta1, delta2])
++    features = np.concatenate((filterbanks, delta1, delta2))
+     features = features.astype(np.float32)
+-    #for i in filterbanks:
+-    #    flatten.extend(list(i))
+-    #for i in delta1:
+-    #    flatten.extend(list(i))
+-    #for i in delta2:
+-    #    flatten.extend(list(i))
++    features = features.reshape((799,64,3))
++
+     return features
+ 
+ def get_available_gpus():
+diff --git a/v2/triplet/utils.pyc b/v2/triplet/utils.pyc
+index 996879b..1648389 100644
+Binary files a/v2/triplet/utils.pyc and b/v2/triplet/utils.pyc differ
