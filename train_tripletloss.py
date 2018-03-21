@@ -138,7 +138,6 @@ def main(args):
         # Start running operations on the Graph.
         gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=args.gpu_memory_fraction, allow_growth=True)
         sess = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options, log_device_placement=False, allow_soft_placement=True))        
-
         # Initialize variables
         sess.run(tf.global_variables_initializer(), feed_dict={phase_train_placeholder:True})
         sess.run(tf.local_variables_initializer(), feed_dict={phase_train_placeholder:True})
@@ -168,6 +167,7 @@ def main(args):
                                           summary_op, summary_writer, args.learning_rate_schedule_file,
                                           args.embedding_size, anchor, positive, negative, triplet_loss)
                     print('EPOCH LOSS: ',epoch_loss)
+                    
                     # Save variables and the metagraph if it doesn't exist already
                     save_variables_and_metagraph(sess, saver, summary_writer, model_dir, subdir, step)
 
@@ -267,8 +267,9 @@ def train(args, sess, dataset, epoch, wave_paths_placeholder, labels_placeholder
         # Add validation loss and accuracy to summary
         #pylint: disable=maybe-no-member
         summary.value.add(tag='time/selection', simple_value=selection_time)
+        summary.value.add(tag='epoch_loss', simple_value=epoch_loss)
         summary_writer.add_summary(summary, step)
-
+        
     return step, epoch_loss
 
 
