@@ -3,6 +3,7 @@ from __future__ import division
 from __future__ import print_function
 
 import tensorflow as tf
+import numpy as np
 
 # Input Shape: [-1, 799, 64, 3]
 # Layer1 Shape: [-1, 400, 32, 32]
@@ -10,151 +11,118 @@ import tensorflow as tf
 # Layer3 Shape: [-1, 100, 8, 128]
 # Layer3 Shape: [-1, 50, 4, 256]
 
-def inference(x, batch_size, keep_probability, phase_train, bottleneck_layer_size, weight_decay):
-    # NHWC
-    with tf.name_scope('Graph'):
-        x=tf.reshape(x,[batch_size,-1,64,3], name='input')
-        print()
-        print('-'*100)
-        print("INPUT SHAPE: ", x.get_shape().as_list())
-        
-        with tf.variable_scope('conv2D_A'):
-            x = tf.layers.conv2d(x,
-                                 filters=32,
-                                 kernel_size=5,
-                                 strides=1,
-                                 padding='SAME',
-                                 data_format='channels_last',
-                                 kernel_initializer=tf.contrib.layers.xavier_initializer_conv2d(seed=0),
-                                 activation=tf.nn.relu6,
-                                 name='conv2D_64_A')
-            x = tf.layers.batch_normalization(x, training=True)
-            x = tf.layers.max_pooling2d(x, pool_size=[2, 2], strides=[2,2], padding='SAME')
-            
-        print("CONVA SHAPE: ", x.get_shape().as_list())
-        
-        with tf.variable_scope('conv2D_B'):
-            x = tf.layers.conv2d(x,
-                                 filters=64,
-                                 kernel_size=3,
-                                 strides=1,
-                                 padding='SAME',
-                                 data_format = 'channels_last',
-                                 kernel_initializer=tf.contrib.layers.xavier_initializer_conv2d(seed=0),
-                                 activation=tf.nn.relu6,
-                                 name='conv2D_64_B')
-            x = tf.layers.batch_normalization(x, training=True)
-            x = tf.layers.max_pooling2d(x, [2, 2], strides=[2,2], padding='SAME')
+def clipped_relu(x):
+    return tf.minimum(tf.maximum(x, 0), 20, name='clipped_relu')
 
-        print("CONVB SHAPE: ", x.get_shape().as_list())
-        
-        x=tf.reshape(x,[batch_size,-1,1024])
-        x=tf.transpose(x,[1,0,2])
-
-        print("RESHAPE: ", x.get_shape().as_list())
-        
-        cells = []
-        for _ in range(3):
-            cell = tf.contrib.rnn.GRUCell(512)  # Or LSTMCell(num_units)
-            cell = tf.contrib.rnn.DropoutWrapper(cell, output_keep_prob=1.0 - keep_probability)
-            cells.append(cell)
-        cell = tf.contrib.rnn.MultiRNNCell(cells)
-        
-        output, _ = tf.nn.dynamic_rnn(cell, x, dtype=tf.float32)
-        
-        print("GRU SHAPE: ", output.get_shape().as_list())
-        
-        with tf.variable_scope('Temporal_Average_Layer'):
-            x = tf.reduce_mean(output,0)
-
-        print("TEMPORAL AVG SHAPE: ", x.get_shape().as_list())
-
-        with tf.variable_scope('Affine_Layer_A'):
-            x = tf.layers.dense(x, 
-                                units=256, 
-                                activation = tf.nn.relu6,
-                                kernel_initializer=tf.contrib.layers.xavier_initializer(seed=0))
-
-        print("AFFINE SHAPE: ", x.get_shape().as_list())
-
-        with tf.variable_scope('L2_Norm'):
-            x = tf.nn.l2_normalize(x, 1, name='embedding')
-        
-        print('-'*100)
-        print()
-        
+def identity_block(inp_tensor, kernel_size, filters, weight_decay, phase_train, seed, block, stage):
+    block_name = 'res{}_{}_{}'.format(filters, stage, block)
+    
+    x = tf.layers.conv2d(inp_tensor,
+                         filters=filters,
+                         kernel_size=kernel_size,
+                         strides=1,
+                         padding='SAME',
+                         data_format='channels_last',
+                         kernel_initializer=tf.contrib.layers.xavier_initializer(seed=seed), 
+                         activation=None, 
+                         use_bias=True, 
+                         bias_initializer=tf.zeros_initializer(), 
+                         kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=weight_decay),
+                         bias_regularizer=tf.contrib.layers.l2_regularizer(scale=weight_decay),
+                         name=block_name+'_conv2a')
+    
+    x = tf.layers.batch_normalization(x, training=phase_train, name=block_name+'_batch_norm_a')
+    
+    x = clipped_relu(x)
+    
+    x = tf.layers.conv2d(inp_tensor,
+                         filters=filters,
+                         kernel_size=kernel_size,
+                         strides=1,
+                         padding='SAME',
+                         data_format='channels_last',
+                         kernel_initializer=tf.contrib.layers.xavier_initializer(seed=seed), 
+                         activation=None, 
+                         use_bias=True, 
+                         bias_initializer=tf.zeros_initializer(), 
+                         kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=weight_decay),
+                         bias_regularizer=tf.contrib.layers.l2_regularizer(scale=weight_decay),
+                         name=block_name+'_conv2b')
+    
+    x = tf.layers.batch_normalization(x, training=phase_train, name=block_name+'_batch_norm_b')
+    
+    x = tf.add_n([x, inp_tensor], name='_add')
+    
+    x = clipped_relu(x)
+    
     return x
 
-def inference_val(x, batch_size, keep_probability, phase_train, bottleneck_layer_size, weight_decay):
-    # NCHW
-    with tf.name_scope('Graph'):
-        x=tf.reshape(x,[batch_size,-1,64,3],name='input')
-        print()
-        print('-'*100)
-        print("INPUT SHAPE: ", x.get_shape().as_list())
+def conv_identity_block(inp_tensor, filters, weight_decay, phase_train, seed, stage):
+    conv_name = 'conv-res{}_{}'.format(filters, stage)
+    
+    x = tf.layers.conv2d(inp_tensor,
+                         filters=filters,
+                         kernel_size=5,
+                         strides=2,
+                         padding='SAME',
+                         data_format='channels_last',
+                         kernel_initializer=tf.contrib.layers.xavier_initializer(seed=seed), 
+                         activation=None, 
+                         use_bias=True, 
+                         bias_initializer=tf.zeros_initializer(), 
+                         kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=weight_decay),
+                         bias_regularizer=tf.contrib.layers.l2_regularizer(scale=weight_decay),
+                         name=conv_name+'_conv2a')
+    
+    x = tf.layers.batch_normalization(x, training=phase_train, name=conv_name+'_batch_norm_a')
+    
+    x = clipped_relu(x)
+    
+    for i in range(3):
+        o = identity_block(x, kernel_size=3, 
+                           filters=filters, weight_decay=weight_decay, 
+                           phase_train=phase_train, seed=seed, block=i, stage=stage)
+    return o
+
+    
+def inference(inp_tensor, batch_size, keep_probability, phase_train, weight_decay, embedding_size):
+    rnd = np.random.randint(100, 1000, 1)
+    print()
+    print('-'*100)
+    print("INPUT SHAPE: ", inp_tensor.get_shape().as_list())
+    with tf.name_scope('Model'):
+        with tf.variable_scope('Block_1'):
+            x = conv_identity_block(inp_tensor, 64, weight_decay, phase_train, seed=rnd, stage=1)
+        print('BLOCK 1 SHAPE: ', x.get_shape().as_list())
         
-        with tf.variable_scope('conv2D_A'):
-            x = tf.layers.conv2d(x,
-                                 filters=32,
-                                 kernel_size=5,
-                                 strides=1,
-                                 padding='SAME',
-                                 data_format='channels_last',
-                                 kernel_initializer=tf.contrib.layers.xavier_initializer_conv2d(seed=0),
-                                 activation=tf.nn.relu6,
-                                 name='conv2D_64_A')
-            x = tf.layers.batch_normalization(x, training=False)
-            x = tf.layers.max_pooling2d(x, pool_size=[2, 2], strides=[2,2], padding='SAME')
+        with tf.variable_scope('Block_2'):
+            x = conv_identity_block(x, 128, weight_decay, phase_train, seed=rnd, stage=2)
+        print('BLOCK 2 SHAPE: ', x.get_shape().as_list())
             
-        print("CONVA SHAPE: ", x.get_shape().as_list())
-        
-        with tf.variable_scope('conv2D_B'):
-            x = tf.layers.conv2d(x,
-                                 filters=64,
-                                 kernel_size=3,
-                                 strides=1,
-                                 padding='SAME',
-                                 data_format = 'channels_last',
-                                 kernel_initializer=tf.contrib.layers.xavier_initializer_conv2d(seed=0),
-                                 activation=tf.nn.relu6,
-                                 name='conv2D_64_B')
-            x = tf.layers.batch_normalization(x, training=False)
-            x = tf.layers.max_pooling2d(x, [2, 2], strides=[2,2], padding='SAME')
-
-        print("CONVB SHAPE: ", x.get_shape().as_list())
-        
-        x=tf.reshape(x,[batch_size,-1,1024])
-        x=tf.transpose(x,[1,0,2])
-
-        print("RESHAPE: ", x.get_shape().as_list())
-        
-        cells = []
-        for _ in range(3):
-            cell = tf.contrib.rnn.GRUCell(512)  # Or LSTMCell(num_units)
-            cell = tf.contrib.rnn.DropoutWrapper(cell, output_keep_prob=1.0)
-            cells.append(cell)
-        cell = tf.contrib.rnn.MultiRNNCell(cells)
-        
-        output, _ = tf.nn.dynamic_rnn(cell, x, dtype=tf.float32)
-        
-        print("GRU SHAPE: ", output.get_shape().as_list())
-        
-        with tf.variable_scope('Temporal_Average_Layer'):
-            x = tf.reduce_mean(output,0)
-
-        print("TEMPORAL AVG SHAPE: ", x.get_shape().as_list())
-
-        with tf.variable_scope('Affine_Layer_A'):
-            x = tf.layers.dense(x, 
-                                units=256, 
-                                activation = tf.nn.relu6,
-                                kernel_initializer=tf.contrib.layers.xavier_initializer(seed=0))
-
-        print("AFFINE SHAPE: ", x.get_shape().as_list())
-
-        with tf.variable_scope('L2_Norm'):
-            x = tf.nn.l2_normalize(x, 1, name='embedding')
+        with tf.variable_scope('Block_3'):
+            x = conv_identity_block(x, 256, weight_decay, phase_train, seed=rnd, stage=3)
+        print('BLOCK 3 SHAPE: ', x.get_shape().as_list())
+            
+        with tf.variable_scope('Block_4'):
+            x = conv_identity_block(x, 512, weight_decay, phase_train, seed=rnd, stage=4)
+        print('BLOCK 4 SHAPE: ', x.get_shape().as_list())
+            
+        with tf.variable_scope('Reshape'):
+            x = tf.reshape(x, [batch_size, -1, 2048])
+        print('RESHAPED: ', x.get_shape().as_list())
+            
+        with tf.variable_scope('Temporal_Mean'):
+            x = tf.reduce_mean(x, axis=1)
+        print('TEMPORAL MEAN: ', x.get_shape().as_list())
+            
+        with tf.variable_scope('Affine'):
+            x = tf.layers.dense(x, units=embedding_size)
+        print('AFFINE: ', x.get_shape().as_list())
+            
+        with tf.variable_scope('L2_Normalize'):
+            x = tf.nn.l2_normalize(x, 1, 1e-10, name='embedding')
+        print('L2 NORMALIZED: ', x.get_shape().as_list())
         
         print('-'*100)
-        print()
+        print()       
     return x

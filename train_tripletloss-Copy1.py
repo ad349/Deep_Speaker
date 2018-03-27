@@ -20,12 +20,11 @@ import scipy.io.wavfile as wave
 import models.bioid_cnn_lstm as network
 
 #from nets import model_softmax as network
-from utils import get_filterbanks
+from utils import get_filterbanks #get_available_gpus
 
 from tensorflow.python.ops import data_flow_ops
 
 from six.moves import xrange # Python 2.7
-
 
 def main(args):
     # This loads the graph for the model
@@ -40,7 +39,7 @@ def main(args):
     if not os.path.isdir(model_dir):  # Create the model directory if it doesn't exist
         os.makedirs(model_dir)
     # Write arguments to a text file
-    bioid.write_arguments_to_file(args, os.path.join(log_dir, 'arguments.txt'))    
+    bioid.write_arguments_to_file(args, os.path.join(log_dir, 'arguments.txt'))
     
     # Store some git revision info in a text file in the log directory
     src_path,_ = os.path.split(os.path.realpath(__file__))
@@ -65,7 +64,9 @@ def main(args):
     with tf.Graph().as_default():
         tf.set_random_seed(args.seed)
         global_step = tf.Variable(0, trainable=False)
-        
+  
+        #available_gpus=get_available_gpus()
+        #num_clones=len(available_gpus)
         # Placeholder for the learning rate
         learning_rate_placeholder = tf.placeholder(tf.float32, name='learning_rate')
         batch_size_placeholder = tf.placeholder(tf.int32, name='batch_size')
@@ -76,7 +77,7 @@ def main(args):
         # filename_placeholder = tf.placeholder(tf.string)
         
         # Should also try PaddingFIFO Queue
-        input_queue = data_flow_ops.FIFOQueue(capacity=100000,
+        input_queue = data_flow_ops.FIFOQueue(capacity=110000,
                                     dtypes=[tf.string, tf.int64],
                                     shapes=[(3,), (3,)],
                                     shared_name=None, name=None)
@@ -90,26 +91,25 @@ def main(args):
             waves = []
             for filename in tf.unstack(filenames):
                 wave = tf.py_func(get_filterbanks, [filename], tf.float32)
-                # Add Augmentation Here
-                #
-                wave.set_shape((3, args.nframes, args.nfilt))
+                wave.set_shape((args.nframes, args.nfilt, 3))
                 waves.append(wave)
             waves_and_labels.append([waves, label])
-
+            
         wave_batch, labels_batch = tf.train.batch_join(
             waves_and_labels,
             batch_size=batch_size_placeholder,
-            shapes=[(3, args.nframes, args.nfilt), ()],
+            shapes=[(args.nframes, args.nfilt, 3), ()],
             enqueue_many=True,
             capacity=4 * nrof_preprocess_threads * args.batch_size,
             allow_smaller_final_batch=True)
-        wave_batch = tf.identity(wave_batch, 'wave_batch')
         wave_batch = tf.identity(wave_batch, 'input')
         labels_batch = tf.identity(labels_batch, 'label_batch')
 
         # Build the inference graph
-        embeddings = network.inference(wave_batch, batch_size_placeholder, args.keep_probability, 
+        logits = network.inference(wave_batch, batch_size_placeholder, args.keep_probability, 
             phase_train=phase_train_placeholder, bottleneck_layer_size=args.embedding_size, weight_decay=args.weight_decay)
+        
+        embeddings = tf.nn.l2_normalize(logits, 1, 1e-10, name='embedding')
 
         # L2 Normalize embeddings in the model definition.
         # embeddings = tf.nn.l2_normalize(prelogits, 1, 1e-10, name='embeddings')
@@ -137,9 +137,8 @@ def main(args):
         summary_op = tf.summary.merge_all()
 
         # Start running operations on the Graph.
-        gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=args.gpu_memory_fraction, allow_growth=False)
+        gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=args.gpu_memory_fraction, allow_growth=True)
         sess = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options, log_device_placement=False, allow_soft_placement=True))        
-
         # Initialize variables
         sess.run(tf.global_variables_initializer(), feed_dict={phase_train_placeholder:True})
         sess.run(tf.local_variables_initializer(), feed_dict={phase_train_placeholder:True})
@@ -162,14 +161,13 @@ def main(args):
                     #epoch = step // args.epoch_size
                     epoch += 1
                     # Train for one epoch
-                    _, epoch_loss = train(args, sess, train_set, epoch, wave_paths_placeholder,
-                                          labels_placeholder, labels_batch, batch_size_placeholder,
-                                          learning_rate_placeholder, phase_train_placeholder, enqueue_op,
-                                          input_queue, global_step, embeddings, total_loss, train_op,
-                                          summary_op, summary_writer, args.learning_rate_schedule_file,
-                                          args.embedding_size, anchor, positive, negative, triplet_loss)
+                    train(args, sess, train_set, epoch, wave_paths_placeholder,
+                          labels_placeholder, labels_batch, batch_size_placeholder,
+                          learning_rate_placeholder, phase_train_placeholder, enqueue_op,
+                          input_queue, global_step, embeddings, total_loss, train_op,
+                          summary_op, summary_writer, args.learning_rate_schedule_file,
+                          args.embedding_size, anchor, positive, negative, triplet_loss)
                     
-                    print('EPOCH LOSS: ',epoch_loss)
                     # Save variables and the metagraph if it doesn't exist already
                     save_variables_and_metagraph(sess, saver, summary_writer, model_dir, subdir, step)
 
@@ -177,7 +175,8 @@ def main(args):
                     # Add Evaluate function from facenet
                     # if args.lfw_dir:
                     #     evaluate(sess, lfw_paths, embeddings, labels_batch, wave_paths_placeholder, labels_placeholder, 
-                    #             batch_size_placeholder, learning_rate_placeholder, phase_train_placeholder, enqueue_op, actual_issame, args.batch_size, 
+                    #             batch_size_placeholder, learning_rate_placeholder, phase_train_placeholder, 
+                    #                enqueue_op, actual_issame, args.batch_size, 
                     #             args.lfw_nrof_folds, log_dir, step, summary_writer, args.embedding_size)
                 print('All Epochs Finished!')
                 print('Stopping all threads')
@@ -218,19 +217,19 @@ def train(args, sess, dataset, epoch, wave_paths_placeholder, labels_placeholder
         emb_array = np.zeros((nrof_examples, embedding_size))
         nrof_batches = int(np.ceil(nrof_examples / args.batch_size))
         print('Number of batches for forward pass: ', nrof_batches)
+        print('Running forward pass on sampled waves took: ', end='')
         # Run this on GPUs, no need to average the losses as no loss is calculated here
         for i in range(nrof_batches):
             batch_size = min(nrof_examples-i*args.batch_size, args.batch_size)
             emb, lab = sess.run([embeddings, labels_batch], feed_dict={batch_size_placeholder: batch_size, 
                 learning_rate_placeholder: lr, phase_train_placeholder: True})
             emb_array[lab,:] = emb
-        print('Running forward pass on sampled waves took: ', end='')
         print('%.3f' % (time.time()-start_time))
 
         # Select triplets based on the embeddings
         print('Selecting suitable triplets for training')
         triplets, nrof_random_negs, nrof_triplets = select_triplets(emb_array, num_per_class,
-            wave_paths, args.people_per_batch, args.alpha)
+                                                                    wave_paths, args.people_per_batch, args.alpha)
         selection_time = time.time() - start_time
         print('(nrof_random_negs, nrof_triplets) = (%d, %d): time=%.3f seconds' % 
             (nrof_random_negs, nrof_triplets, selection_time))
@@ -246,7 +245,8 @@ def train(args, sess, dataset, epoch, wave_paths_placeholder, labels_placeholder
         i = 0
         emb_array = np.zeros((nrof_examples, embedding_size))
         loss_array = np.zeros((nrof_triplets,))
-        summary = tf.Summary()
+        epoch_loss = []
+        #summary = tf.Summary()
         # Run this on multi GPUs and update average loss
         print('Number of batches to update loss :', nrof_batches)
         while i < nrof_batches:
@@ -254,23 +254,26 @@ def train(args, sess, dataset, epoch, wave_paths_placeholder, labels_placeholder
             batch_size = min(nrof_examples-i*args.batch_size, args.batch_size)
             feed_dict = {batch_size_placeholder: batch_size, learning_rate_placeholder: lr, phase_train_placeholder: True}
             err, _, step, emb, lab = sess.run([loss, train_op, global_step, embeddings, labels_batch], feed_dict=feed_dict)
-            epoch_loss+=err
+            epoch_loss.append(err)
             emb_array[lab,:] = emb
             loss_array[i] = err
             duration = time.time() - start_time
-            print('Epoch: [%d][%d/%d]\tTime %.3f\tLoss %2.3f' % 
-                (epoch, batch_number+1, nrof_batches, duration, err)) # changed args.epoch_size to nrof_batches
+            print('Epoch: [%d][%d/%d]\tTime %.3f\tLoss %2.6f' % 
+                (epoch, batch_number+1, args.epoch_size, duration, err)) # changed args.epoch_size to nrof_batches
             batch_number += 1
             i += 1
             train_time += duration
-            summary.value.add(tag='loss', simple_value=err)
-
+            #summary.value.add(tag='loss/step', simple_value=err)
         # Add validation loss and accuracy to summary
         #pylint: disable=maybe-no-member
-        summary.value.add(tag='time/selection', simple_value=selection_time)
-        summary_writer.add_summary(summary, step)
-
-    return step, epoch_loss
+        #summary.value.add(tag='time/selection', simple_value=selection_time)
+    avg_epoch_loss = sum(epoch_loss)/len(epoch_loss)
+    print('-'*100)
+    print('Epoch: [%d]\tAvg Loss %2.6f' % (epoch, avg_epoch_loss))
+    print('-'*100)
+    #summary.value.add(tag='loss/epoch_loss', simple_value=avg_epoch_loss)
+    #summary_writer.add_summary(summary, step)
+    return True
 
 
 def select_triplets(embeddings, nrof_waves_per_class, wave_paths, people_per_batch, alpha):
@@ -298,10 +301,14 @@ def select_triplets(embeddings, nrof_waves_per_class, wave_paths, people_per_bat
             for pair in xrange(j, nrof_waves): # For every possible positive pair.
                 p_idx = emb_start_idx + pair
                 pos_dist_sqr = np.sum(np.square(embeddings[a_idx]-embeddings[p_idx]))
-                neg_dists_sqr[emb_start_idx:emb_start_idx+nrof_waves] = np.NaN
-                #all_neg = np.where(np.logical_and(neg_dists_sqr-pos_dist_sqr<alpha, pos_dist_sqr<neg_dists_sqr))[0]
+                neg_dists_sqr[emb_start_idx:emb_start_idx+nrof_waves] = np.NaN # np.Nan
+                #all_neg = np.where(neg_dists_sqr<pos_dist_sqr)[0]
+                all_neg = np.where(np.logical_or(
+                    neg_dists_sqr<pos_dist_sqr, np.logical_and(
+                        pos_dist_sqr<neg_dists_sqr,neg_dists_sqr<pos_dist_sqr+alpha)))[0]
+                # all_neg = np.where(np.logical_and(neg_dists_sqr-pos_dist_sqr<alpha, pos_dist_sqr<neg_dists_sqr))[0]
                 # Facenet/Same as Deep Speaker
-                all_neg = np.where(neg_dists_sqr-pos_dist_sqr < alpha)[0] # VGG Face selecction
+                #all_neg = np.where(neg_dists_sqr-pos_dist_sqr < alpha)[0] # VGG Face selecction
                 nrof_random_negs = all_neg.shape[0]
                 if nrof_random_negs>0:
                     rnd_idx = np.random.randint(nrof_random_negs)
@@ -441,25 +448,25 @@ def parse_arguments(argv):
     parser.add_argument('--duration', type=int,
         help='Duration of audio in seconds to use', default=8)
     parser.add_argument('--keep_probability', type=float,
-        help='Keep probability of dropout for the fully connected layer(s).', default=1.0)
+        help='Keep probability of dropout for the fully connected layer(s).', default=0.1)
     parser.add_argument('--embedding_size', type=int,
         help='Dimensionality of the embedding.', default=256)
     parser.add_argument('--alpha', type=float,
-        help='Positive to negative triplet distance margin.', default=0.1)
+        help='Positive to negative triplet distance margin.', default=0.15)
     parser.add_argument('--learning_rate_decay_epochs', type=int,
-        help='Number of epochs between learning rate decay.', default=100)
+        help='Number of epochs between learning rate decay.', default=10)
     parser.add_argument('--epoch_size', type=int,
         help='Number of batches per epoch.', default=1000)
     parser.add_argument('--learning_rate_decay_factor', type=float,
-        help='Learning rate decay factor.', default=1.0)
+        help='Learning rate decay factor.', default=0.96)
     parser.add_argument('--optimizer', type=str, choices=['ADAGRAD', 'ADADELTA', 'ADAM', 'RMSPROP', 'MOM'],
-        help='The optimization algorithm to use', default='ADAGRAD')
+        help='The optimization algorithm to use', default='ADAM')
     parser.add_argument('--moving_average_decay', type=float,
         help='Exponential decay for tracking of training parameters.', default=0.9999)
     parser.add_argument('--gpu_memory_fraction', type=float,
         help='Upper bound on the amount of GPU memory that will be used by the process.', default=0.7)
     parser.add_argument('--max_nrof_epochs', type=int,
-        help='Number of epochs to run.', default=500)
+        help='Number of epochs to run.', default=100)
     parser.add_argument('--learning_rate_schedule_file', type=str,
         help='File containing the learning rate schedule that is used when learning_rate is set to to -1.', default='data/learning_rate_schedule.txt')
     parser.add_argument('--people_per_batch', type=int,
